@@ -491,7 +491,7 @@ def process_gcov_data(data_fname, covdata, source_fname, options):
     if len(segments) != 4 or not \
             segments[2].lower().strip().endswith('source'):
         raise RuntimeError(
-            'Fatal error parsing gcov file, line 1: \n\t"%s"' % line.rstrip()
+            'Fatal error parsing gcov file [ %s ], line 1: \n\t"%s"' % (data_fname, line.rstrip())
         )
     #
     # Find the source file
@@ -888,13 +888,27 @@ def process_datafile(filename, covdata, options):
                 elif options.verbose:
                     sys.stdout.write("Excluding gcov file %s\n" % fname)
                     gcov_files['exclude'].append(fname)
+        
+        if options.ignore_open_error:
+            ignore_patterns = options.ignore_open_error
+            need_ignore = lambda e: any(re.search(p, e) for p in ignore_patterns)
 
-        #print "HERE", err, "XXX", source_re.search(err)
-        if source_re.search(err):
+            errs = filter(source_re.search, (x.strip() for x in err.split('\n')))
+            real_errors = [e for e in errs if not need_ignore(e)]
+            skipped_errors = [e for e in errs if need_ignore(e)]
+            # print "HERE", real_errors, ' IN ', errs , '======='
+            if options.verbose:
+                if skipped_errors:
+                    sys.stderr.write("Skipping:{}\n---\n".format('\n'.join(skipped_errors)))
+            gcov_error_str = '\n'.join(real_errors)
+        else:
+            gcov_error_str = err if source_re.search(err) else None
+
+        if gcov_error_str:
             #
             # gcov tossed errors: try the next potential_wd
             #
-            errors.append(err)
+            errors.append(gcov_error_str)
         else:
             #
             # Process *.gcov files
@@ -2061,6 +2075,13 @@ parser.add_option(
     action="store",
     dest="objdir",
     default=None
+)
+parser.add_option(
+    "-z", "--ignore-open-error",
+    help="ignore gcov errors about opening these files",
+    action="append",
+    default=[],
+    dest="ignore_open_error"
 )
 parser.add_option(
     "-o", "--output",
